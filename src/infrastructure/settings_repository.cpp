@@ -1,0 +1,25 @@
+#include "settings_repository.h"
+#include <Windows.h>
+#include <msxml6.h>
+#include <comdef.h>
+#include <filesystem>
+#include <sstream>
+#pragma comment(lib,"msxml6.lib")
+namespace snippet { namespace {
+struct Com { HRESULT hr{CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED)}; ~Com(){if(SUCCEEDED(hr))CoUninitialize();} };
+std::wstring Attr(IXMLDOMElement* e,const wchar_t* name){VARIANT v;VariantInit(&v); e->getAttribute(_bstr_t(name),&v); std::wstring s=v.vt==VT_BSTR?v.bstrVal:L"";VariantClear(&v);return s;}
+bool Bool(const std::wstring& s){return s==L"true";}
+void Set(IXMLDOMElement* e,const wchar_t* n,const std::wstring& v){e->setAttribute(_bstr_t(n),_variant_t(v.c_str()));}
+IXMLDOMElement* Element(IXMLDOMDocument2* d,const wchar_t* name){IXMLDOMElement* e{};d->createElement(_bstr_t(name),&e);return e;}
+}
+LoadResult XmlSettingsRepository::Load() const {
+ if(!std::filesystem::exists(path_)) return {AppSettings{},L""}; Com com; IXMLDOMDocument2* d{}; if(FAILED(CoCreateInstance(CLSID_DOMDocument60,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&d))))return {{},L"MSXMLを初期化できません。"};
+ d->put_async(VARIANT_FALSE);d->put_validateOnParse(VARIANT_FALSE);d->put_resolveExternals(VARIANT_FALSE);d->setProperty(_bstr_t(L"ProhibitDTD"),_variant_t(true));VARIANT_BOOL ok{};d->load(_variant_t(path_.c_str()),&ok);if(!ok){d->Release();return {{},L"設定XMLを解析できません (CFG-LOAD-001)。"};}
+ IXMLDOMElement* root{};d->get_documentElement(&root);if(!root||Attr(root,L"schemaVersion")!=L"1"){if(root)root->Release();d->Release();return {{},L"未対応の設定バージョンです。"};} AppSettings out;out.startupEnabled=Bool(Attr(root,L"startupEnabled"));out.firstRunCompleted=Bool(Attr(root,L"firstRunCompleted"));
+ IXMLDOMNodeList* list{};d->selectNodes(_bstr_t(L"/snippetTool/snippets/snippet"),&list);long count{};list->get_length(&count);for(long i=0;i<count;++i){IXMLDOMNode* n{};list->get_item(i,&n);IXMLDOMElement* e{};n->QueryInterface(&e);Snippet s;s.id=Attr(e,L"id");s.name=Attr(e,L"name");s.enabled=Bool(Attr(e,L"enabled"));IXMLDOMNode* h{};e->selectSingleNode(_bstr_t(L"hotkey"),&h);IXMLDOMElement* he{};if(h)h->QueryInterface(&he);if(he){std::wstringstream ss(Attr(he,L"modifiers"));std::wstring p;while(std::getline(ss,p,L'|')){if(p==L"Ctrl")s.hotkey.modifiers.push_back(Modifier::Ctrl);else if(p==L"Alt")s.hotkey.modifiers.push_back(Modifier::Alt);else if(p==L"Shift")s.hotkey.modifiers.push_back(Modifier::Shift);else if(p==L"Win")s.hotkey.modifiers.push_back(Modifier::Win);}try{s.hotkey.virtualKey=std::stoul(Attr(he,L"virtualKey"));}catch(...){s.hotkey.virtualKey=0;}he->Release();}if(h)h->Release();IXMLDOMNode* b{};e->selectSingleNode(_bstr_t(L"body"),&b);BSTR text{};if(b)b->get_text(&text);if(text){s.body=text;SysFreeString(text);}if(b)b->Release();e->Release();n->Release();out.snippets.push_back(std::move(s));}list->Release();root->Release();d->Release();if(!ValidateSettings(out).empty())return {{},L"設定値が不正です (CFG-LOAD-001)。"};return {std::move(out),L""};
+}
+std::wstring XmlSettingsRepository::Save(const AppSettings& settings) {
+ if(!ValidateSettings(settings).empty())return L"不正な設定は保存できません。";std::filesystem::create_directories(path_.parent_path());Com com;IXMLDOMDocument2* d{};if(FAILED(CoCreateInstance(CLSID_DOMDocument60,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&d))))return L"MSXMLを初期化できません。";IXMLDOMElement* root=Element(d,L"snippetTool");Set(root,L"schemaVersion",L"1");Set(root,L"startupEnabled",settings.startupEnabled?L"true":L"false");Set(root,L"firstRunCompleted",settings.firstRunCompleted?L"true":L"false");d->appendChild(root,nullptr);IXMLDOMElement* items=Element(d,L"snippets");root->appendChild(items,nullptr);
+ for(const auto& s:settings.snippets){auto* e=Element(d,L"snippet");Set(e,L"id",s.id);Set(e,L"name",s.name);Set(e,L"enabled",s.enabled?L"true":L"false");auto* h=Element(d,L"hotkey");std::wstring mods;for(auto m:s.hotkey.modifiers){if(!mods.empty())mods+=L"|";mods+=m==Modifier::Ctrl?L"Ctrl":m==Modifier::Alt?L"Alt":m==Modifier::Shift?L"Shift":L"Win";}Set(h,L"modifiers",mods);Set(h,L"virtualKey",std::to_wstring(s.hotkey.virtualKey));e->appendChild(h,nullptr);h->Release();auto* b=Element(d,L"body");b->put_text(_bstr_t(s.body.c_str()));e->appendChild(b,nullptr);b->Release();items->appendChild(e,nullptr);e->Release();}items->Release();root->Release();auto tmp=path_;tmp+=L".tmp";HRESULT hr=d->save(_variant_t(tmp.c_str()));d->Release();if(FAILED(hr))return L"一時設定を書き込めません (CFG-SAVE-001)。";HANDLE f=CreateFileW(tmp.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);if(f!=INVALID_HANDLE_VALUE){FlushFileBuffers(f);CloseHandle(f);}BOOL moved=std::filesystem::exists(path_)?ReplaceFileW(path_.c_str(),tmp.c_str(),(path_.wstring()+L".bak").c_str(),REPLACEFILE_WRITE_THROUGH,nullptr,nullptr):MoveFileExW(tmp.c_str(),path_.c_str(),MOVEFILE_WRITE_THROUGH);return moved?L"":L"設定を原子的に置換できません (CFG-SAVE-001)。";
+}
+}
