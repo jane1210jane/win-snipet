@@ -56,7 +56,7 @@ TEST(FR03_hotkey_display_has_stable_modifier_order) {
     REQUIRE(formatted == L"Ctrl+Alt+Shift+Win+F2");
 }
 
-TEST(FR05_picker_item_shows_name_and_first_15_body_characters) {
-    Snippet snippet{L"{01234567-89AB-CDEF-0123-456789ABCDEF}",L"name",L"12345\n7890123456X",{{Modifier::Ctrl},'A'},true};
-    REQUIRE(FormatPickerItem(snippet)==L"name — 12345 789012345…");
+TEST(FR05_picker_item_shows_name_and_first_45_body_characters) {
+    Snippet snippet{L"{01234567-89AB-CDEF-0123-456789ABCDEF}",L"name",L"12345\n78901234567890123456789012345678901234567890X",{{Modifier::Ctrl},'A'},true};
+    REQUIRE(FormatPickerItem(snippet)==L"name — 12345 789012345678901234567890123456789012345…");
 }

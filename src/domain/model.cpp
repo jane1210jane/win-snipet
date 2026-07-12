@@ -61,9 +61,9 @@ std::wstring FormatHotkey(const Hotkey& hotkey) {
     return result;
 }
 std::wstring FormatPickerItem(const Snippet& snippet) {
-    std::wstring preview=snippet.body.substr(0,15);
+    std::wstring preview=snippet.body.substr(0,45);
     std::replace(preview.begin(),preview.end(),L'\n',L' ');std::replace(preview.begin(),preview.end(),L'\r',L' ');
-    if(snippet.body.size()>15)preview+=L"…";
+    if(snippet.body.size()>45)preview+=L"…";
     return snippet.name+L" — "+preview;
 }
 }
