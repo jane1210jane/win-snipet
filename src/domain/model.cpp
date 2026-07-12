@@ -46,6 +46,8 @@ ValidationResult ValidateSnippet(const Snippet& input) {
 }
 std::vector<std::wstring> ValidateSettings(const AppSettings& settings) {
     std::vector<std::wstring> errors; std::set<std::pair<unsigned,unsigned>> keys; std::set<std::wstring> ids;
+    const auto pickerErrors=ValidateHotkey(settings.pickerHotkey);errors.insert(errors.end(),pickerErrors.begin(),pickerErrors.end());
+    keys.emplace(ModifierMask(settings.pickerHotkey),settings.pickerHotkey.virtualKey);
     for(const auto& item:settings.snippets){ auto validated=ValidateSnippet(item); errors.insert(errors.end(),validated.errors.begin(),validated.errors.end());
         std::wstring id=item.id; std::transform(id.begin(),id.end(),id.begin(),towupper); if(!ids.insert(id).second) errors.push_back(L"IDが重複しています。");
         const unsigned key=item.hotkey.virtualKey; if(!keys.emplace(ModifierMask(item.hotkey),key).second) errors.push_back(L"ショートカットが重複しています。"); }
@@ -57,5 +59,11 @@ std::wstring FormatHotkey(const Hotkey& hotkey) {
     unsigned key=hotkey.virtualKey;
     if(key>=0x70&&key<=0x87) result+=L"F"+std::to_wstring(key-0x6F); else { if(key>=L'a'&&key<=L'z')key-=32; if(key>=32&&key<127) result.push_back(static_cast<wchar_t>(key)); else result+=L"VK("+std::to_wstring(key)+L")"; }
     return result;
+}
+std::wstring FormatPickerItem(const Snippet& snippet) {
+    std::wstring preview=snippet.body.substr(0,15);
+    std::replace(preview.begin(),preview.end(),L'\n',L' ');std::replace(preview.begin(),preview.end(),L'\r',L' ');
+    if(snippet.body.size()>15)preview+=L"…";
+    return snippet.name+L" — "+preview;
 }
 }

@@ -8,10 +8,11 @@ namespace { std::filesystem::path Temp(const wchar_t* name) { auto p=std::filesy
 
 TEST(FR06_settings_round_trip_preserves_unicode_xml_characters_and_newlines) {
     const auto path=Temp(L"SnippetToolTests-roundtrip"); XmlSettingsRepository repository(path);
-    AppSettings source; source.startupEnabled=false; source.firstRunCompleted=true;
+    AppSettings source; source.startupEnabled=false; source.firstRunCompleted=true; source.pickerHotkey={{Modifier::Ctrl,Modifier::Shift},'K'};
     source.snippets.push_back({L"{01234567-89AB-CDEF-0123-456789ABCDEF}",L"挨拶 & <確認>",L"こんにちは\n次の行",{{Modifier::Ctrl,Modifier::Alt},'H'},true});
     REQUIRE(repository.Save(source).empty()); auto loaded=repository.Load(); REQUIRE(loaded.ok());
     REQUIRE(loaded.settings->snippets[0].name==source.snippets[0].name); REQUIRE(loaded.settings->snippets[0].body==source.snippets[0].body);
+    REQUIRE(FormatHotkey(loaded.settings->pickerHotkey)==L"Ctrl+Shift+K");
 }
 
 TEST(FR06_corrupt_xml_is_reported_and_not_overwritten) {
@@ -27,4 +28,9 @@ TEST(FR06_second_save_creates_backup_and_replaces_atomically) {
 TEST(FR06_unknown_schema_version_is_rejected_without_modification) {
  const auto path=Temp(L"SnippetToolTests-schema");const char data[]="<snippetTool schemaVersion=\"99\"/>";HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);DWORD n{};WriteFile(file,data,sizeof(data)-1,&n,nullptr);CloseHandle(file);
  XmlSettingsRepository repository(path);const auto before=std::filesystem::file_size(path);const auto loaded=repository.Load();REQUIRE(!loaded.ok());REQUIRE(std::filesystem::file_size(path)==before);
+}
+
+TEST(FR06_legacy_settings_without_picker_hotkey_use_alt_p) {
+ const auto path=Temp(L"SnippetToolTests-legacy-picker");const char data[]="<snippetTool schemaVersion=\"1\" startupEnabled=\"false\" firstRunCompleted=\"true\"><snippets/></snippetTool>";HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);DWORD n{};WriteFile(file,data,sizeof(data)-1,&n,nullptr);CloseHandle(file);
+ XmlSettingsRepository repository(path);const auto loaded=repository.Load();REQUIRE(loaded.ok());REQUIRE(FormatHotkey(loaded.settings->pickerHotkey)==L"Alt+P");
 }

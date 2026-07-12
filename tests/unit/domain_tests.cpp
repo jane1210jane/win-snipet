@@ -33,6 +33,16 @@ TEST(FR03_duplicate_hotkeys_are_case_insensitive_and_include_disabled_items) {
     REQUIRE(ValidateSettings(settings).size() == 1);
 }
 
+TEST(FR03_picker_hotkey_must_be_valid_and_unique) {
+    AppSettings settings;
+    settings.pickerHotkey={{Modifier::Alt}, 'P'};
+    settings.snippets.push_back({L"{01234567-89AB-CDEF-0123-456789ABCDEF}", L"one", L"1", {{Modifier::Alt}, 'P'}, true});
+    REQUIRE(ValidateSettings(settings).size() == 1);
+    settings.snippets[0].hotkey={{Modifier::Ctrl}, 'A'};
+    settings.pickerHotkey={{}, 'P'};
+    REQUIRE(ValidateSettings(settings).size() == 1);
+}
+
 TEST(FR03_function_key_does_not_collide_with_letter_key) {
     AppSettings settings;
     settings.snippets.push_back({L"{01234567-89AB-CDEF-0123-456789ABCDEF}", L"f2", L"1", {{Modifier::Ctrl}, VK_F2}, true});
@@ -44,4 +54,9 @@ TEST(FR03_hotkey_display_has_stable_modifier_order) {
     const auto formatted = FormatHotkey({{Modifier::Win, Modifier::Shift, Modifier::Alt, Modifier::Ctrl}, VK_F2});
     if (formatted != L"Ctrl+Alt+Shift+Win+F2") { std::wcerr << L"Actual: " << formatted << L'\n'; }
     REQUIRE(formatted == L"Ctrl+Alt+Shift+Win+F2");
+}
+
+TEST(FR05_picker_item_shows_name_and_first_15_body_characters) {
+    Snippet snippet{L"{01234567-89AB-CDEF-0123-456789ABCDEF}",L"name",L"12345\n7890123456X",{{Modifier::Ctrl},'A'},true};
+    REQUIRE(FormatPickerItem(snippet)==L"name — 12345 789012345…");
 }
